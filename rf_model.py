@@ -165,6 +165,11 @@ class RandomForest:
 
     @staticmethod
     def load(path):
-        model = torch.load(path, map_location='cpu')
+        if str(path).endswith('.gz'):
+            import gzip
+            with gzip.open(path, 'rb') as f:
+                model = torch.load(f, map_location='cpu')
+        else:
+            model = torch.load(path, map_location='cpu')
         print(f"✅ Model loaded from {path}")
         return model

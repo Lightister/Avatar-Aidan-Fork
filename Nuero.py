@@ -9,18 +9,23 @@ import numpy as np
 from predictions_local.deeplearningpytorchpredictor import DeeplearningPytorchPredictor
 from rf_model import RandomForest
 
-# Load GaussianNB from the hyphenated prediction-gaussiannb directory
-gaussian_nb_path = Path(__file__).resolve().parent / "prediction-gaussiannb" / "pytorch" / "gaussiannb_model.py"
-spec = importlib.util.spec_from_file_location("prediction_gaussiannb.pytorch.gaussiannb_model", gaussian_nb_path)
-gaussian_nb_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(gaussian_nb_module)
-GaussianNB = gaussian_nb_module.GaussianNB
-
 load_dotenv()
 
 predictor = None
 rf_predictor = None
 gaussian_nb = None
+
+def load_gaussian_nb_class():
+    gaussian_nb_path = Path(__file__).resolve().parent / "prediction-gaussiannb" / "pytorch" / "gaussiannb_model.py"
+    if not gaussian_nb_path.exists():
+        raise FileNotFoundError(
+            f"Could not find GaussianNB file at {gaussian_nb_path}. "
+            "Ensure the prediction-gaussiannb directory is present in the repository."
+        )
+    spec = importlib.util.spec_from_file_location("prediction_gaussiannb.pytorch.gaussiannb_model", gaussian_nb_path)
+    gaussian_nb_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gaussian_nb_module)
+    return gaussian_nb_module.GaussianNB
 
 data_buffer = []
 buffer_size = 512  # Assuming 256 Hz * 2 seconds
@@ -45,9 +50,15 @@ def create_neurosity_client():
 def create_predictors():
     predictor_instance = DeeplearningPytorchPredictor()
     rf_path = Path(__file__).resolve().parent / "prediction-random-forest" / "pytorch" / "custom_rf.pt.gz"
+    if not rf_path.exists():
+        raise FileNotFoundError(
+            f"Could not find Random Forest model at {rf_path}. "
+            "Ensure the prediction-random-forest directory is present and the model file exists."
+        )
     rf_predictor_instance = RandomForest.load(str(rf_path))
     num_features = 16
     num_classes = 6
+    GaussianNB = load_gaussian_nb_class()
     gaussian_nb_instance = GaussianNB(num_features, num_classes)
     X_dummy = torch.randn(100, num_features)
     y_dummy = torch.randint(0, num_classes, (100,))
