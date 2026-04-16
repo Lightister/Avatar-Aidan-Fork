@@ -16,12 +16,29 @@ rf_predictor = None
 gaussian_nb = None
 
 def load_gaussian_nb_class():
-    gaussian_nb_path = Path(__file__).resolve().parent / "prediction-gaussiannb" / "pytorch" / "gaussiannb_model.py"
-    if not gaussian_nb_path.exists():
+    # Try multiple possible locations for the GaussianNB file
+    possible_paths = [
+        # Relative to the script directory
+        Path(__file__).resolve().parent / "prediction-gaussiannb" / "pytorch" / "gaussiannb_model.py",
+        # Relative to current working directory
+        Path.cwd() / "prediction-gaussiannb" / "pytorch" / "gaussiannb_model.py",
+        # Try to find repo root and look there
+        Path(__file__).resolve().parent.parent / "prediction-gaussiannb" / "pytorch" / "gaussiannb_model.py",
+    ]
+
+    gaussian_nb_path = None
+    for path in possible_paths:
+        if path.exists():
+            gaussian_nb_path = path
+            break
+
+    if gaussian_nb_path is None:
         raise FileNotFoundError(
-            f"Could not find GaussianNB file at {gaussian_nb_path}. "
-            "Ensure the prediction-gaussiannb directory is present in the repository."
+            f"Could not find GaussianNB file. Searched in:\n" +
+            "\n".join(f"  - {p}" for p in possible_paths) +
+            "\n\nPlease ensure you have cloned the complete repository with the prediction-gaussiannb directory."
         )
+
     spec = importlib.util.spec_from_file_location("prediction_gaussiannb.pytorch.gaussiannb_model", gaussian_nb_path)
     gaussian_nb_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(gaussian_nb_module)
@@ -49,12 +66,30 @@ def create_neurosity_client():
 
 def create_predictors():
     predictor_instance = DeeplearningPytorchPredictor()
-    rf_path = Path(__file__).resolve().parent / "prediction-random-forest" / "pytorch" / "custom_rf.pt.gz"
-    if not rf_path.exists():
+
+    # Try multiple possible locations for the RandomForest model
+    possible_rf_paths = [
+        # Relative to the script directory
+        Path(__file__).resolve().parent / "prediction-random-forest" / "pytorch" / "custom_rf.pt.gz",
+        # Relative to current working directory
+        Path.cwd() / "prediction-random-forest" / "pytorch" / "custom_rf.pt.gz",
+        # Try to find repo root and look there
+        Path(__file__).resolve().parent.parent / "prediction-random-forest" / "pytorch" / "custom_rf.pt.gz",
+    ]
+
+    rf_path = None
+    for path in possible_rf_paths:
+        if path.exists():
+            rf_path = path
+            break
+
+    if rf_path is None:
         raise FileNotFoundError(
-            f"Could not find Random Forest model at {rf_path}. "
-            "Ensure the prediction-random-forest directory is present and the model file exists."
+            f"Could not find Random Forest model file. Searched in:\n" +
+            "\n".join(f"  - {p}" for p in possible_rf_paths) +
+            "\n\nPlease ensure you have cloned the complete repository with the prediction-random-forest directory."
         )
+
     rf_predictor_instance = RandomForest.load(str(rf_path))
     num_features = 16
     num_classes = 6
