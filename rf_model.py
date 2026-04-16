@@ -165,12 +165,26 @@ class RandomForest:
 
     @staticmethod
     def load(path):
-        torch.serialization.add_safe_globals([RandomForest])
-        if str(path).endswith('.gz'):
-            import gzip
-            with gzip.open(path, 'rb') as f:
-                model = torch.load(f, map_location='cpu', weights_only=False)
-        else:
-            model = torch.load(path, map_location='cpu', weights_only=False)
+        # Import the classes that need to be available for unpickling
+        from rf_model import RandomForest, DecisionTree
+        # Temporarily make the classes available in __main__ for unpickling
+        import sys
+        main_module = sys.modules['__main__']
+        main_module.RandomForest = RandomForest
+        main_module.DecisionTree = DecisionTree
+        try:
+            with torch.serialization.safe_globals([RandomForest, DecisionTree]):
+                if str(path).endswith('.gz'):
+                    import gzip
+                    with gzip.open(path, 'rb') as f:
+                        model = torch.load(f, map_location='cpu', weights_only=False)
+                else:
+                    model = torch.load(path, map_location='cpu', weights_only=False)
+        finally:
+            # Clean up
+            if hasattr(main_module, 'RandomForest'):
+                delattr(main_module, 'RandomForest')
+            if hasattr(main_module, 'DecisionTree'):
+                delattr(main_module, 'DecisionTree')
         print(f"✅ Model loaded from {path}")
         return model
