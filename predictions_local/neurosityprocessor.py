@@ -106,5 +106,4 @@ class NeurosityDataProcessor:
 
     def get_tensor(self):
         self.capture_data()
-        return self.preprocess_eeg()</content>
-<parameter name="filePath">/workspaces/Avatar-Aidan-Fork/predictions_local/neurosityprocessor.py
+        return self.preprocess_eeg()

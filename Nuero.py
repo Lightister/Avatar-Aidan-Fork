@@ -1,41 +1,73 @@
 from neurosity import NeurositySDK
 from dotenv import load_dotenv
+import importlib.util
+from pathlib import Path
 import os
+import time
 import torch
 import numpy as np
 from predictions_local.deeplearningpytorchpredictor import DeeplearningPytorchPredictor
 from rf_model import RandomForest
-from prediction_gaussiannb.pytorch.gaussiannb_model import GaussianNB
+
+# Load GaussianNB from the hyphenated prediction-gaussiannb directory
+gaussian_nb_path = Path(__file__).resolve().parent / "prediction-gaussiannb" / "pytorch" / "gaussiannb_model.py"
+spec = importlib.util.spec_from_file_location("prediction_gaussiannb.pytorch.gaussiannb_model", gaussian_nb_path)
+gaussian_nb_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(gaussian_nb_module)
+GaussianNB = gaussian_nb_module.GaussianNB
 
 load_dotenv()
 
-neurosity = NeurositySDK({
-    "device_id": os.getenv("NEUROSITY_DEVICE_ID"),
-})
+predictor = None
+rf_predictor = None
+gaussian_nb = None
 
-neurosity.login({
-    "email": os.getenv("NEUROSITY_EMAIL"),
-    "password": os.getenv("NEUROSITY_PASSWORD")
-})
-
-# Initialize predictors
-predictor = DeeplearningPytorchPredictor()
-
-# Load Random Forest
-rf_path = "/workspaces/Avatar-Aidan-Fork/prediction-random-forest/pytorch/custom_rf.pt.gz"
-rf_predictor = RandomForest.load(rf_path)
-
-# Fit Gaussian NB with dummy data (replace with real training data for accuracy)
-num_features = 16
-num_classes = 6
-nb_predictor = GaussianNB(num_features, num_classes)
-X_dummy = torch.randn(100, num_features)
-y_dummy = torch.randint(0, num_classes, (100,))
-nb_predictor.fit(X_dummy, y_dummy)
-
-# Buffer for accumulating data
 data_buffer = []
 buffer_size = 512  # Assuming 256 Hz * 2 seconds
+
+def get_env_var(name):
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+def create_neurosity_client():
+    device_id = get_env_var("NEUROSITY_DEVICE_ID")
+    neurosity = NeurositySDK({"device_id": device_id})
+    neurosity.login({
+        "email": get_env_var("NEUROSITY_EMAIL"),
+        "password": get_env_var("NEUROSITY_PASSWORD"),
+    })
+    return neurosity
+
+
+def create_predictors():
+    predictor_instance = DeeplearningPytorchPredictor()
+    rf_path = Path(__file__).resolve().parent / "prediction-random-forest" / "pytorch" / "custom_rf.pt.gz"
+    rf_predictor_instance = RandomForest.load(str(rf_path))
+    num_features = 16
+    num_classes = 6
+    gaussian_nb_instance = GaussianNB(num_features, num_classes)
+    X_dummy = torch.randn(100, num_features)
+    y_dummy = torch.randint(0, num_classes, (100,))
+    gaussian_nb_instance.fit(X_dummy, y_dummy)
+    return predictor_instance, rf_predictor_instance, gaussian_nb_instance
+
+
+def main():
+    global predictor, rf_predictor, gaussian_nb
+    neurosity = create_neurosity_client()
+    predictor, rf_predictor, gaussian_nb = create_predictors()
+    unsubscribe = neurosity.brainwaves_raw(callback)
+    print("Neurosity stream started. Press Ctrl+C to stop.")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        unsubscribe()
+        print("Stream stopped.")
+
 
 def callback(data):
     global data_buffer
@@ -75,7 +107,7 @@ def callback(data):
             rf_label = predictor.class_map.get(rf_predicted_class, "unknown")
             
             # Gaussian NB prediction
-            nb_pred = nb_predictor.predict(rf_input)
+            nb_pred = gaussian_nb.predict(rf_input)
             nb_predicted_class = nb_pred[0].item()
             nb_label = predictor.class_map.get(nb_predicted_class, "unknown")
             
@@ -84,4 +116,6 @@ def callback(data):
             # Clear buffer or keep sliding
             data_buffer = data_buffer[-buffer_size//2:]  # Overlap
 
-unsubscribe = neurosity.brainwaves_raw(callback)
+
+if __name__ == "__main__":
+    main()
