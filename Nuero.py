@@ -153,7 +153,7 @@ def callback(data):
             rf_label = predictor.class_map.get(rf_predicted_class, "unknown")
             
             # Gaussian NB prediction
-            nb_pred = gaussian_nb.predict(rf_input)
+            nb_pred = gaussian_nb(rf_input)
             nb_predicted_class = nb_pred[0].item()
             nb_label = predictor.class_map.get(nb_predicted_class, "unknown")
             
