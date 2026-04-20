@@ -9,7 +9,7 @@ import numpy as np
 from predictions_local.deeplearningpytorchpredictor import DeeplearningPytorchPredictor
 from rf_model import RandomForest
 
-load_dotenv()
+load_dotenv('.env.txt')
 
 predictor = None
 rf_predictor = None
@@ -138,7 +138,7 @@ def callback(data):
             dl_input = torch.tensor(batch[:, 0], dtype=torch.float32).unsqueeze(0)  # [1, 512]
             with torch.no_grad():
                 dl_output = predictor(dl_input)
-                dl_predicted_class = torch.argmax(dl_output, dim=1).item()
+                dl_predicted_class = dl_output
                 dl_label = predictor.class_map.get(dl_predicted_class, "unknown")
             
             # Random Forest prediction

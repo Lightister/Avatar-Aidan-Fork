@@ -71,8 +71,8 @@ class DeeplearningPytorchPredictor:
         pred_label = self.class_map[avg_class]
         print("Average class label:", pred_label)
 
-        # Return the first label
-        return pred_label
+        # Return the class index
+        return avg_class
     
     if __name__ == "__main__":
         DeeplearningPyTorchPredictor()
