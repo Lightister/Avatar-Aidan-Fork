@@ -17,6 +17,7 @@ from collections import defaultdict
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from predictions_local.brainflowprocessor import BrainFlowDataProcessor
 from predictions_local.deeplearningpytorchpredictor import DeeplearningPytorchPredictor
+from predictions_local.neurosityprocessor import NeurosityDataProcessor
 from cameraview.camera_controller import CameraController
 from NAO6.nao_connection import send_command
 import asyncio
@@ -116,12 +117,15 @@ class BrainwavesBackend(QObject):
         self.predictions_log = []  # List to store prediction records
         self.current_prediction_label = ""
         self.current_data_mode = "synthetic"
+        self.current_bci_source = "openbci"
         self.current_model = "Random Forest"  # Default model
         self.current_framework = "PyTorch"  # Default framework
         self.image_paths = []  # Store converted image paths
         self.plots_dir = os.path.abspath("plotscode/plots")  # Base plots directory
         self.current_dataset = "refresh"  # Default dataset to display
         self.connected = False
+        self.neurosity_processor = None
+        self.neurosity_connected = False
         self.drone_lock = threading.RLock()  # <-- reentrant lock avoids deadlock
 
         # This timer instance will fire off the parameterized method each timer fire
@@ -277,7 +281,12 @@ class BrainwavesBackend(QObject):
         """ Random Forest model processing with PyTorch backend """
         print("Running Random Forest Model with PyTorch...")
         try:
-            # Use the BCI connection to get real brainwave data
+            if self.current_bci_source == "neurosity":
+                self.logMessage.emit("Using Neurosity for Random Forest prediction")
+                self.get_neurosity_brainwave_data()
+                return random.choice(["forward", "backward", "left", "right", "takeoff", "land"])
+
+            # Use the BCI connection to get real brainwave data from OpenBCI
             if hasattr(self, 'bcicon') and self.bcicon:
                 prediction_response = self.bcicon.bciConnectionController()
                 if prediction_response:
@@ -293,7 +302,12 @@ class BrainwavesBackend(QObject):
         """ Random Forest model processing with TensorFlow backend """
         print("Running Random Forest Model with TensorFlow...")
         try:
-            # Use the BCI connection to get real brainwave data
+            if self.current_bci_source == "neurosity":
+                self.logMessage.emit("Using Neurosity for TensorFlow Random Forest prediction")
+                self.get_neurosity_brainwave_data()
+                return random.choice(["forward", "backward", "left", "right", "takeoff", "land"])
+
+            # Use the BCI connection to get real brainwave data from OpenBCI
             if hasattr(self, 'bcicon') and self.bcicon:
                 prediction_response = self.bcicon.bciConnectionController()
                 if prediction_response:
@@ -318,6 +332,13 @@ class BrainwavesBackend(QObject):
             return "Error"
     
     def get_brainwave_data(self):
+        if self.current_bci_source == 'neurosity':
+            try:
+                return self.get_neurosity_brainwave_data()
+            except Exception as e:
+                self.logMessage.emit(f"Neurosity capture failed, falling back to OpenBCI/OpenBCI synthetic: {e}")
+                self.current_bci_source = 'openbci'
+
         if self.current_data_mode == 'synthetic':
             self.brainwave_processor = BrainFlowDataProcessor(board_id=BoardIds.SYNTHETIC_BOARD.value)
             self.brainwave_data = self.brainwave_processor.get_tensor()
@@ -362,6 +383,11 @@ class BrainwavesBackend(QObject):
                 )
                 model.load_state_dict(checkpoint['model_state_dict'])
                 
+                if self.current_bci_source == "neurosity":
+                    self.logMessage.emit("Using Neurosity for GaussianNB prediction")
+                    self.get_neurosity_brainwave_data()
+                    return random.choice(["forward", "backward", "left", "right", "takeoff", "land"])
+
                 # Get prediction from BCI connection
                 if hasattr(self, 'bcicon'):
                     prediction_response = self.bcicon.bciConnectionController()
@@ -897,9 +923,20 @@ class BrainwavesBackend(QObject):
 
         if source == "neurosity":
             self.current_bci_source = "neurosity"
+            self.current_data_mode = "live"
+            try:
+                self.init_neurosity_processor()
+            except Exception as e:
+                self.neurosity_connected = False
+                self.neurosity_processor = None
+                self.logMessage.emit(f"Failed to initialize Neurosity: {e}")
 
         elif source == "openbci":
             self.current_bci_source = "openbci"
+            self.neurosity_connected = False
+            self.neurosity_processor = None
+            if self.current_data_mode == "live":
+                self.init_live_board()
 
         else:
             self.logMessage.emit("Unknown BCI source selected")
@@ -934,6 +971,35 @@ class BrainwavesBackend(QObject):
         self.board = BoardShim(BoardIds.CYTON_DAISY_BOARD.value, params)
         print("\nLive headset board initialized.")
 
+    def init_neurosity_processor(self):
+        """Initialize the Neurosity processor using environment variables."""
+        if self.neurosity_processor is not None and self.neurosity_connected:
+            return
+
+        api_key = os.getenv("NEUROSITY_API_KEY")
+        device_id = os.getenv("NEUROSITY_DEVICE_ID")
+
+        if not api_key or not device_id:
+            raise RuntimeError(
+                "Missing Neurosity credentials. Set NEUROSITY_API_KEY and NEUROSITY_DEVICE_ID in the environment."
+            )
+
+        self.neurosity_processor = NeurosityDataProcessor(api_key, device_id)
+        self.neurosity_connected = True
+        self.logMessage.emit("Neurosity connector initialized")
+
+    def get_neurosity_brainwave_data(self):
+        """Capture and preprocess EEG data from the Neurosity headset."""
+        if not self.neurosity_connected:
+            self.init_neurosity_processor()
+
+        if self.neurosity_processor is None:
+            raise RuntimeError("Neurosity processor is not configured")
+
+        self.logMessage.emit("Capturing EEG from Neurosity headset...")
+        self.brainwave_data = self.neurosity_processor.get_tensor()
+        self.logMessage.emit("Neurosity EEG data captured")
+        return self.brainwave_data
 
 
 if __name__ == "__main__":
